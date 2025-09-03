@@ -10,7 +10,7 @@ const userRoutes = require("./routes/userRoutes");
 
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "https://blog-backend-5igh.onrender.com",
     credentials: true,
   })
 );
