@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 const crypto = require("crypto");
 const transporter = require("../utils/mailer");
-const { addDays, differenceInDays, subDays, isAfter } = require("date-fns");
+const { addDays, differenceInDays } = require("date-fns");
 
 const client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID,
@@ -14,7 +14,7 @@ const client = new OAuth2Client({
 
 function generateAccessToken(user) {
   return jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-    expiresIn: "20s",
+    expiresIn: "15m",
   });
 }
 
