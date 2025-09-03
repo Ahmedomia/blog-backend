@@ -8,14 +8,9 @@ const blogRoutes = require("./routes/blogRoutes");
 const commentRoutes = require("./routes/commentRoutes");
 const userRoutes = require("./routes/userRoutes");
 
-const allowedOrigins = [
-  "https://react-blog-app-3hjk-9ceppamg2-ahmedomias-projects.vercel.app",
-  "http://localhost:5173",
-];
-
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: true,
     credentials: true,
   })
 );
