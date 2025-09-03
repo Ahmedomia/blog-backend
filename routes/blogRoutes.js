@@ -9,19 +9,20 @@ const {
   deleteBlog,
   shareBlog,
   getSharedBlog,
+  getUserBlogs,
 } = require("../controllers/blogController");
 const authenticate = require("../middleware/authMiddleware");
 const router = express.Router();
 
-router.get("/mine", authenticate, getBlogsForUser);
-
-router.get("/", getAllBlogs);
-
-router.get("/:id", getBlogById);
 router.get("/share/:shareid", getSharedBlog);
 
+router.get("/mine", authenticate, getBlogsForUser);
+router.get("/", authenticate, getAllBlogs);
+router.get("/:id", authenticate, getBlogById);
+router.get("/user/:id", authenticate, getUserBlogs);
+
+router.post("/",authenticate, createBlog);
 router.post("/:id/share", authenticate, shareBlog);
-router.post("/", authenticate, createBlog);
 router.put("/:id", authenticate, updateBlog);
 router.delete("/:id", authenticate, deleteBlog);
 

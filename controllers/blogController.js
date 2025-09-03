@@ -21,7 +21,6 @@ exports.getAllBlogs = async (req, res) => {
       `,
       [limit, offset]
     );
-    console.log("Fetched blogs from DB:", result.rows);
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -241,5 +240,34 @@ exports.getSharedBlog = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  }
+};
+exports.getUserBlogs = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT 
+        blogs.*, 
+        users.name AS author, 
+        users.email AS authoremail, 
+        users."profilepic" AS authorpic
+      FROM blogs
+      JOIN users ON blogs.authorid = users.id
+      WHERE blogs.authorid = $1
+      ORDER BY blogs.createdat DESC
+      `,
+      [id]
+    );
+    console.log(result);
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "No blogs found for this user" });
+    }
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching user blogs:", err);
+    res.status(500).json({ error: err.message });
   }
 };

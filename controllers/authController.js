@@ -4,6 +4,7 @@ const jwt = require("jsonwebtoken");
 const { OAuth2Client } = require("google-auth-library");
 const crypto = require("crypto");
 const transporter = require("../utils/mailer");
+const { addDays, differenceInDays, subDays, isAfter } = require("date-fns");
 
 const client = new OAuth2Client({
   clientId: process.env.GOOGLE_CLIENT_ID,
@@ -11,9 +12,39 @@ const client = new OAuth2Client({
   redirectUri: "postmessage",
 });
 
+function generateAccessToken(user) {
+  return jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+    expiresIn: "20s",
+  });
+}
+
+function generateRefreshToken() {
+  return crypto.randomBytes(40).toString("hex");
+}
+
+async function saveRefreshToken(userId, token, expiresAt) {
+  await pool.query(
+    `INSERT INTO refresh_tokens (user_id, token, expires_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (user_id) DO UPDATE SET token = $2, expires_at = $3`,
+    [userId, token, expiresAt]
+  );
+}
+
+async function removeRefreshToken(userId) {
+  await pool.query("DELETE FROM refresh_tokens WHERE user_id = $1", [userId]);
+}
+
+async function findRefreshToken(token) {
+  const res = await pool.query(
+    "SELECT * FROM refresh_tokens WHERE token = $1",
+    [token]
+  );
+  return res.rows[0];
+}
+
 exports.signup = async (req, res) => {
   const { name, email, password, profilepic } = req.body;
-  console.log("Signup request body:", req.body);
   try {
     const existing = await pool.query("SELECT * FROM users WHERE email = $1", [
       email,
@@ -22,14 +53,13 @@ exports.signup = async (req, res) => {
       return res.status(400).json({ message: "User already exists" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const verificationCode = Math.floor(
       100000 + Math.random() * 900000
     ).toString();
 
-    const result = await pool.query(
+    await pool.query(
       `INSERT INTO users (name, email, password, profilepic, is_verified, verification_code)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, name, email, profilepic`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [name, email, hashedPassword, profilepic, false, verificationCode]
     );
 
@@ -51,7 +81,6 @@ exports.signup = async (req, res) => {
 
 exports.verifyCode = async (req, res) => {
   const { email, code } = req.body;
-
   try {
     const userResult = await pool.query(
       "SELECT * FROM users WHERE email = $1",
@@ -62,31 +91,38 @@ exports.verifyCode = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
     if (user.is_verified)
       return res.status(400).json({ message: "User already verified" });
-
-    if (user.verification_code !== code) {
+    if (user.verification_code !== code)
       return res.status(400).json({ message: "Invalid verification code" });
-    }
 
     await pool.query(
       "UPDATE users SET is_verified = true, verification_code = NULL WHERE email = $1",
       [email]
     );
 
-    // ✅ Auto-login: create JWT token
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
-    res.status(200).json({
-      message: "Email verified and login successful",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        profilepic: user.profilepic,
-      },
-    });
+    await saveRefreshToken(user.id, refreshToken, refreshTokenExpiry);
+
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 90 * 24 * 60 * 60 * 1000,
+      })
+      .status(200)
+      .json({
+        message: "Email verified and login successful",
+        accessToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          profilepic: user.profilepic,
+        },
+      });
   } catch (error) {
     console.error("Verification error:", error);
     res.status(500).json({ message: "Verification failed" });
@@ -95,7 +131,6 @@ exports.verifyCode = async (req, res) => {
 
 exports.login = async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [
       email,
@@ -114,19 +149,30 @@ exports.login = async (req, res) => {
         .json({ message: "Please verify your email before logging in." });
     }
 
-    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
-    res.status(200).json({
-      message: "Login successful",
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        profilepic: user.profilepic,
-      },
-    });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+
+    await saveRefreshToken(user.id, refreshToken, refreshTokenExpiry);
+
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 90 * 24 * 60 * 60 * 1000,
+      })
+      .status(200)
+      .json({
+        message: "Login successful",
+        accessToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          profilepic: user.profilepic,
+        },
+      });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ message: "Login failed" });
@@ -135,8 +181,6 @@ exports.login = async (req, res) => {
 
 exports.googleLogin = async (req, res) => {
   const { code } = req.body;
-  console.log("Received from frontend:", req.body);
-
   try {
     const { tokens } = await client.getToken(code);
 
@@ -157,25 +201,96 @@ exports.googleLogin = async (req, res) => {
       user = userCheck.rows[0];
     } else {
       const newUser = await pool.query(
-        "INSERT INTO users (name, email, profilepic, password) VALUES ($1, $2, $3, $4) RETURNING *",
-        [name, email, picture, "google-oauth"]
+        "INSERT INTO users (name, email, profilepic, password, is_verified) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+        [name, email, picture, "google-oauth", true]
       );
       user = newUser.rows[0];
     }
 
-    const myToken = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-      expiresIn: "1d",
-    });
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken();
+    const refreshTokenExpiry = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
 
-    res.status(200).json({ token: myToken, user });
+    await saveRefreshToken(user.id, refreshToken, refreshTokenExpiry);
+
+    res
+      .cookie("refreshToken", refreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 90 * 24 * 60 * 60 * 1000,
+      })
+      .status(200)
+      .json({
+        accessToken,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          profilepic: user.profilepic,
+        },
+      });
   } catch (err) {
     console.error("Google login error:", err);
     res.status(500).json({ message: "Google login failed" });
   }
 };
+
+exports.refreshToken = async (req, res) => {
+  const refreshToken = req.cookies && req.cookies.refreshToken;
+
+  try {
+    const tokenRow = await findRefreshToken(refreshToken);
+    if (!tokenRow || new Date() > tokenRow.expires_at) {
+      const error = new Error("Invalid refresh token");
+      error.status = 401;
+      throw error;
+    }
+
+    const userId = tokenRow.user_id;
+    const now = new Date();
+    if (differenceInDays(tokenRow.expires_at, now) > 30) {
+      const accessToken = generateAccessToken({ id: userId });
+      return res.json({ accessToken });
+    }
+
+    const newRefreshToken = generateRefreshToken();
+    console.log("out here");
+    console.log(newRefreshToken);
+    const expiresAt = addDays(now, 90);
+
+    await saveRefreshToken(userId, newRefreshToken, expiresAt);
+
+    const accessToken = generateAccessToken({ id: userId });
+
+    res
+      .cookie("refreshToken", newRefreshToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 90 * 24 * 60 * 60 * 1000,
+      })
+      .json({ accessToken });
+  } catch (err) {
+    console.error("Refresh token error:", err);
+    res.status(500).json({ message: "Could not refresh token" });
+  }
+};
+
+exports.logout = async (req, res) => {
+  try {
+    if (req.user && req.user.id) {
+      await removeRefreshToken(req.user.id);
+    }
+    res.clearCookie("refreshToken");
+    res.json({ message: "Logged out" });
+  } catch (err) {
+    res.status(500).json({ message: "Logout failed" });
+  }
+};
+
 exports.forgotPassword = async (req, res) => {
   const { email } = req.body;
-
   try {
     const userRes = await pool.query("SELECT * FROM users WHERE email = $1", [
       email,
@@ -207,7 +322,6 @@ exports.forgotPassword = async (req, res) => {
 
 exports.resetPassword = async (req, res) => {
   const { email, code, newPassword } = req.body;
-
   try {
     const userRes = await pool.query(
       `SELECT reset_code, reset_code_expires FROM users WHERE email = $1`,
@@ -237,7 +351,6 @@ exports.resetPassword = async (req, res) => {
 
 exports.verifyResetCode = async (req, res) => {
   const { email, code } = req.body;
-
   try {
     const userRes = await pool.query(
       `SELECT reset_code, reset_code_expires FROM users WHERE email = $1`,
