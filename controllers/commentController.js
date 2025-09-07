@@ -66,36 +66,41 @@ exports.getComments = async (req, res) => {
   try {
     const blogId = req.params.blogId;
 
-    const result = await pool.query(
+    const { rows } = await pool.query(
       `
-              SELECT 
-          c.*,
-          u.name AS "authorName",
-          u.profilepic AS "authorPic",
-          COALESCE(
-            json_agg(
-              json_build_object(
-                'user_id', r.user_id,
-                'reaction', r.reaction,
-                'username', ru.name
-              )
-            ) FILTER (WHERE r.id IS NOT NULL), '[]'
-          ) AS reactions
-        FROM comments c
-        JOIN users u ON c."userid" = u.id
-        LEFT JOIN comment_reactions r ON c.id = r.comment_id
-        LEFT JOIN users ru ON r.user_id = ru.id
-        WHERE c."blogid" = $1
-        GROUP BY c.id, u.id, u.name, u.profilepic
-        ORDER BY c."createdat" DESC;
+      SELECT
+        c.id,
+        c.blogid      AS "blogId",
+        c.userid      AS "userId",
+        c.text,
+        c.createdat   AS "createdAt",
+        u.name        AS "authorName",
+        u.profilepic  AS "authorPic",
+        COALESCE(
+          json_agg(
+            json_build_object(
+              'user_id', r.user_id,
+              'reaction', r.reaction,
+              'username', ru.name
+            )
+          ) FILTER (WHERE r.id IS NOT NULL),
+          '[]'::json
+        ) AS reactions
+      FROM comments c
+      JOIN users u ON c.userid = u.id
+      LEFT JOIN comment_reactions r ON c.id = r.comment_id
+      LEFT JOIN users ru ON r.user_id = ru.id
+      WHERE c.blogid = $1
+      GROUP BY c.id, u.id, u.name, u.profilepic
+      ORDER BY c.createdat DESC;
       `,
       [blogId]
     );
 
-    res.status(200).json(result.rows);
+    res.json(rows);
   } catch (err) {
-    console.error("Get comments error:", err.message);
-    res.status(500).json({ message: "Server error" });
+    console.error("getComments error:", err);
+    res.status(500).json({ message: "Failed to get comments" });
   }
 };
 
