@@ -229,7 +229,7 @@ exports.getSharedBlog = async (req, res) => {
       FROM comments
       JOIN users ON comments."userId" = users.id
       WHERE comments."blogId" = $1
-      ORDER BY comments."createdAt" DESC
+      ORDER BY comments."createdat" DESC
       `,
       [blog.id]
     );

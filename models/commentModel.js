@@ -12,7 +12,7 @@ exports.createComment = async ({ blogId, userId, text }) => {
   const { name: authorName, profilepic: authorpic } = user;
 
   const result = await pool.query(
-    `INSERT INTO comments ("blogId", "userId", "text", "authorname", "authorpic", "createdAt")
+    `INSERT INTO comments ("blogId", "userId", "text", "authorname", "authorpic", "createdat")
      VALUES ($1, $2, $3, $4, $5, NOW())
      RETURNING *`,
     [blogId, userId, text, authorName, authorpic]
@@ -26,11 +26,11 @@ const getCommentsByBlogId = async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT c.id, c.text, c."createdAt", u.id as "userId", u.name as authorname, u.profilepic   as authorpic
+      `SELECT c.id, c.text, c."createdat", u.id as "userId", u.name as authorname, u.profilepic   as authorpic
        FROM comments c
        JOIN users u ON c."userId" = u.id
        WHERE c."blogId" = $1
-       ORDER BY c."createdAt" DESC`,
+       ORDER BY c."createdat" DESC`,
       [blogId]
     );
 

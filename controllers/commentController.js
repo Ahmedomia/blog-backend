@@ -12,7 +12,7 @@ exports.addComment = async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO comments ("blogId", "userId", text, "createdAt")
+      `INSERT INTO comments ("blogid", "userid", text, "createdat")
        VALUES ($1, $2, $3, NOW())
        RETURNING *`,
       [blogId, userId, text]
@@ -44,13 +44,13 @@ exports.getSharedComments = async (req, res) => {
             ) FILTER (WHERE r.id IS NOT NULL), '[]'
           ) AS reactions
         FROM comments c
-        JOIN users u ON c."userId" = u.id
-        JOIN blogs b ON c."blogId" = b.id
+        JOIN users u ON c."userid" = u.id
+        JOIN blogs b ON c."blogid" = b.id
         LEFT JOIN comment_reactions r ON c.id = r.comment_id
         LEFT JOIN users ru ON r.user_id = ru.id
         WHERE b."shareid" = $1
         GROUP BY c.id, u.id, u.name, u.profilepic
-        ORDER BY c."createdAt" DESC;
+        ORDER BY c."createdat" DESC;
       `,
       [shareId]
     );
@@ -82,12 +82,12 @@ exports.getComments = async (req, res) => {
             ) FILTER (WHERE r.id IS NOT NULL), '[]'
           ) AS reactions
         FROM comments c
-        JOIN users u ON c."userId" = u.id
+        JOIN users u ON c."userid" = u.id
         LEFT JOIN comment_reactions r ON c.id = r.comment_id
         LEFT JOIN users ru ON r.user_id = ru.id
-        WHERE c."blogId" = $1
+        WHERE c."blogid" = $1
         GROUP BY c.id, u.id, u.name, u.profilepic
-        ORDER BY c."createdAt" DESC;
+        ORDER BY c."createdat" DESC;
       `,
       [blogId]
     );
