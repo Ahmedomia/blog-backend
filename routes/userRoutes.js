@@ -4,13 +4,12 @@ const {
   getAllUsers,
   getUserById,
 } = require("../controllers/userController");
+const authenticate = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
-router.put("/:id", updateUser);
-router.get("/:id", getUserById);
-router.get("/", getAllUsers); 
-
-
+router.put("/:id", authenticate, updateUser);
+router.get("/:id", authenticate, getUserById);
+router.get("/", authenticate, getAllUsers);
 
 module.exports = router;

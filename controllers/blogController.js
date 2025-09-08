@@ -227,8 +227,8 @@ exports.getSharedBlog = async (req, res) => {
         users.name AS authorName, 
         users."profilepic" AS authorPic
       FROM comments
-      JOIN users ON comments."userId" = users.id
-      WHERE comments."blogId" = $1
+      JOIN users ON comments.userid = users.id
+      WHERE comments.blogid = $1
       ORDER BY comments."createdat" DESC
       `,
       [blog.id]
